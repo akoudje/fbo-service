@@ -1,0 +1,27 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
+model FBO {
+  id          Int      @id @default(autoincrement())
+  fbo_number  String   @unique
+  full_name   String
+  grade       String
+  op_country  String?
+  country     String?
+  phone       String?   // <-- nouveau champ
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+}
