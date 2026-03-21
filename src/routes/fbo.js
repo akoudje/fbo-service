@@ -13,20 +13,23 @@ router.get("/check/:numero", async (req, res) => {
       return res.status(400).json({ error: "Numéro FBO invalide" });
     }
 
-    const fbo = await prisma.fbo.findUnique({
-      where: { numeroFbo: numero },
+    const fbo = await prisma.fBO.findUnique({
+      where: { fbo_number: numero },
+      select: { full_name: true, grade: true }
     });
 
     if (!fbo) return res.json({ exists: false });
 
     return res.json({
       exists: true,
-      full_name: fbo.nomComplet,
+      full_name: fbo.full_name,
+      grade: fbo.grade
     });
   } catch (err) {
     console.error("Erreur FBO:", err);
     return res.status(500).json({ error: "Erreur interne du service FBO" });
   }
 });
+
 
 export default router;
