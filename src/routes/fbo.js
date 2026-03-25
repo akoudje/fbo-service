@@ -15,7 +15,7 @@ router.get("/check/:numero", async (req, res) => {
 
     const fbo = await prisma.fBO.findUnique({
       where: { fbo_number: numero },
-      select: { full_name: true, grade: true }
+      select: { full_name: true, phone: true, grade: true },
     });
 
     if (!fbo) return res.json({ exists: false });
