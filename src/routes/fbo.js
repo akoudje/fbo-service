@@ -23,7 +23,8 @@ router.get("/check/:numero", async (req, res) => {
     return res.json({
       exists: true,
       full_name: fbo.full_name,
-      grade: fbo.grade
+      phone: fbo.phone || null,
+      grade: fbo.grade,
     });
   } catch (err) {
     console.error("Erreur FBO:", err);
