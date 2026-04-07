@@ -18,7 +18,7 @@ router.get("/check/:numero", async (req, res) => {
       where: {
         OR: [{ fbo_number: numero }, { fbo_number: numeroDashed }],
       },
-      select: { full_name: true, phone: true, grade: true },
+      select: { full_name: true, phone: true, email: true, grade: true },
     });
 
     if (!fbo) return res.json({ exists: false });
@@ -27,6 +27,7 @@ router.get("/check/:numero", async (req, res) => {
       exists: true,
       full_name: fbo.full_name,
       phone: fbo.phone || null,
+      email: fbo.email || null,
       grade: fbo.grade,
     });
   } catch (err) {

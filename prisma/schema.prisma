@@ -21,6 +21,9 @@ model FBO {
   op_country  String?
   country     String?
   phone       String?   // <-- nouveau champ
+  email       String?
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
+
+  @@index([email])
 }

@@ -6,6 +6,46 @@ import path from "path";
 
 const prisma = new PrismaClient();
 
+function pickFirst(row, keys = []) {
+  for (const key of keys) {
+    const value = row?.[key];
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      return String(value).trim();
+    }
+  }
+  return null;
+}
+
+function normalizeEmail(value) {
+  const email = String(value || "").trim().toLowerCase();
+  if (!email) return null;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return null;
+  return email;
+}
+
+function normalizeRow(fbo) {
+  const phone = pickFirst(fbo, ["Phone", "Phone ", "phone", "mobile", "Mobile"]);
+  const rawEmail = pickFirst(fbo, [
+    "Email",
+    "E-mail",
+    "email",
+    "Mail",
+    "mail",
+    "Email Address",
+    "email_address",
+  ]);
+
+  return {
+    fbo_number: String(fbo.FBO_Number || "").trim(),
+    full_name: String(fbo["Full Name"] || "").trim(),
+    grade: String(fbo.Grade || "").trim(),
+    op_country: pickFirst(fbo, ["Op_Country", "op_country"]),
+    country: pickFirst(fbo, ["Country", "country"]),
+    phone: phone || null,
+    email: normalizeEmail(rawEmail),
+  };
+}
+
 async function main() {
   console.log("🧹 Nettoyage de la base FBO…");
 
@@ -39,14 +79,9 @@ async function main() {
       const batch = raw.slice(i, i + batchSize);
 
       await prisma.fBO.createMany({
-        data: batch.map((fbo) => ({
-          fbo_number: fbo.FBO_Number,
-          full_name: fbo["Full Name"],
-          grade: fbo.Grade,
-          op_country: fbo.Op_Country,
-          country: fbo.Country,
-          phone: fbo.Phone,
-        })),
+        data: batch
+          .map(normalizeRow)
+          .filter((row) => row.fbo_number && row.full_name && row.grade),
         skipDuplicates: true,
       });
 
