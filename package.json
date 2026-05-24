@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node src/index.js",
     "build": "prisma generate",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "fbo:import": "node prisma/import-excel.js",
+    "fbo:reset": "node prisma/import-excel.js --reset"
   },
   "prisma": {
     "seed": "node prisma/seed.js"
