@@ -5,6 +5,7 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
+    "test": "node --test",
     "build": "prisma generate",
     "postinstall": "prisma generate",
     "fbo:import": "node prisma/import-excel.js",
@@ -20,10 +21,9 @@
   "dependencies": {
     "@prisma/client": "^5.22.0",
     "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "prisma": "^5.22.0",
-    "swagger-jsdoc": "^6.2.8",
-    "swagger-ui-express": "^5.0.1",
     "xlsx": "^0.18.5"
   }
 }

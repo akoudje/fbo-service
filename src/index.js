@@ -3,6 +3,8 @@
 import crypto from "node:crypto";
 import express from "express";
 import cors from "cors";
+import { fileURLToPath } from "node:url";
+import { prisma } from "./lib/prisma.js";
 import fboRoutes from "./routes/fbo.js";
 
 const DEFAULT_ALLOWED_ORIGINS = new Set([
@@ -49,26 +51,67 @@ function requireInternalToken(req, res, next) {
   return next();
 }
 
-const app = express();
-const allowedOrigins = parseAllowedOrigins();
+export function createApp() {
+  const app = express();
+  const allowedOrigins = parseAllowedOrigins();
 
-app.use(
-  cors({
-    origin(origin, cb) {
-      if (!origin) return cb(null, true);
-      if (allowedOrigins.has(origin)) return cb(null, true);
-      return cb(new Error("CORS blocked"));
-    },
-    methods: ["GET"],
-  }),
-);
-app.use(express.json());
+  app.use(
+    cors({
+      origin(origin, cb) {
+        if (!origin) return cb(null, true);
+        if (allowedOrigins.has(origin)) return cb(null, true);
+        return cb(new Error("CORS blocked"));
+      },
+      methods: ["GET"],
+    }),
+  );
+  app.use(express.json({ limit: "16kb" }));
 
-app.use("/fbo", requireInternalToken, fboRoutes);
+  app.get("/", (req, res) => {
+    res.json({ status: "FBO service running" });
+  });
 
-app.get("/", (req, res) => {
-  res.json({ status: "FBO service running" });
-});
+  app.get("/health", async (req, res) => {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      res.json({ status: "ok", database: "ok" });
+    } catch (error) {
+      console.error("Healthcheck FBO failed:", error);
+      res.status(503).json({ status: "error", database: "unavailable" });
+    }
+  });
 
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => console.log("FBO service running on port", PORT));
+  app.use("/fbo", requireInternalToken, fboRoutes);
+
+  app.use((err, req, res, next) => {
+    if (err?.message === "CORS blocked") {
+      return res.status(403).json({ error: "Origin not allowed" });
+    }
+    return next(err);
+  });
+
+  return app;
+}
+
+export function startServer() {
+  const app = createApp();
+  const PORT = process.env.PORT || 3001;
+  const server = app.listen(PORT, () => console.log("FBO service running on port", PORT));
+
+  async function shutdown(signal) {
+    console.log(`FBO service received ${signal}, shutting down`);
+    server.close(async () => {
+      await prisma.$disconnect();
+      process.exit(0);
+    });
+  }
+
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+
+  return server;
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  startServer();
+}

@@ -1,4 +1,11 @@
 import path from "path";
+import {
+  isBurkinaFasoCountry,
+  isDigits,
+  normalizeBurkinaPhone,
+  normalizeLabel,
+  sanitizePhone,
+} from "../src/utils/format.js";
 
 export function pickFirst(row, keys = []) {
   for (const key of keys) {
@@ -17,13 +24,50 @@ export function normalizeEmail(value) {
   return email;
 }
 
-function normalizeLabel(value) {
-  return String(value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
+function dateFromParts(year, month, day) {
+  if (year < 1900 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31) {
+    return null;
+  }
+
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return date;
+}
+
+function normalizeBirthDate(value) {
+  if (value === undefined || value === null || value === "") return null;
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return dateFromParts(value.getFullYear(), value.getMonth() + 1, value.getDate());
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const excelEpoch = Date.UTC(1899, 11, 30);
+    const date = new Date(excelEpoch + Math.trunc(value) * 86400000);
+    return dateFromParts(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate());
+  }
+
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  const iso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (iso) {
+    return dateFromParts(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+  }
+
+  const slash = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (slash) {
+    return dateFromParts(Number(slash[3]), Number(slash[2]), Number(slash[1]));
+  }
+
+  return null;
 }
 
 const MOBILE_MTN_PREFIXES = new Set([
@@ -55,15 +99,6 @@ export function isIvoryCoastCountry(value) {
     "cote divoire ivory coast",
     "cote divoire",
   ].includes(normalized);
-}
-
-export function isBurkinaFasoCountry(value) {
-  const normalized = normalizeLabel(value);
-  return ["burkina faso", "burkina", "bfa", "bf"].includes(normalized);
-}
-
-function isDigits(value) {
-  return /^\d+$/.test(String(value || ""));
 }
 
 function isValidCiTenDigits(num) {
@@ -107,12 +142,6 @@ function correctFixedTenDigits(num) {
   }
 
   return null;
-}
-
-function sanitizePhone(raw) {
-  return String(raw || "")
-    .trim()
-    .replace(/[ \-./()]/g, "");
 }
 
 export function normalizeCiPhone(rawPhone) {
@@ -188,41 +217,6 @@ export function normalizeCiPhone(rawPhone) {
   };
 }
 
-export function normalizeBurkinaPhone(rawPhone) {
-  const original = String(rawPhone || "").trim();
-  if (!original) {
-    return { phone: null, status: "empty", reason: null, country: "BFA" };
-  }
-
-  let cleanNum = sanitizePhone(original);
-  if (!cleanNum) {
-    return { phone: null, status: "empty", reason: null, country: "BFA" };
-  }
-
-  if (cleanNum.startsWith("+226")) {
-    cleanNum = cleanNum.slice(4);
-  } else if (cleanNum.startsWith("00226")) {
-    cleanNum = cleanNum.slice(5);
-  } else if (cleanNum.startsWith("226") && cleanNum.length > 8) {
-    cleanNum = cleanNum.slice(3);
-  }
-
-  while (cleanNum.startsWith("00") && cleanNum.length > 8) {
-    cleanNum = cleanNum.slice(2);
-  }
-
-  if (isDigits(cleanNum) && cleanNum.length === 8) {
-    return { phone: cleanNum, status: "normalized", reason: null, country: "BFA" };
-  }
-
-  return {
-    phone: null,
-    status: "invalid",
-    reason: `Format Burkina non reconnu: ${original}`,
-    country: "BFA",
-  };
-}
-
 export function normalizeGeneralPhone(rawPhone) {
   const cleanNum = sanitizePhone(rawPhone);
   return cleanNum || null;
@@ -252,6 +246,7 @@ export function normalizeSourceRow(row) {
     "Email Address",
     "email_address",
   ]);
+  const rawBirthDate = row?.["Birth Date"] ?? row?.["Date de naissance"] ?? row?.birth_date;
 
   let phoneInfo;
   if (isIvoryCoastCountry(country)) {
@@ -276,6 +271,7 @@ export function normalizeSourceRow(row) {
       country: country || null,
       phone: phoneInfo.phone,
       email: normalizeEmail(rawEmail),
+      birth_date: normalizeBirthDate(rawBirthDate),
     },
     phoneInfo,
   };

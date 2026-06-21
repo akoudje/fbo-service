@@ -3,3 +3,9 @@ node_modules
 .env
 
 /generated/prisma
+
+# Generated import artifacts and local source extracts
+*.xlsx
+~$*.xlsx
+prisma/reports/
+prisma/chunks/fbo-import-*.json

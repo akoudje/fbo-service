@@ -2,7 +2,7 @@ import "dotenv/config";
 import fs from "fs";
 import path from "path";
 import xlsx from "xlsx";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import {
   chunkArray,
   ensureReportFileName,
@@ -64,6 +64,7 @@ function buildImportPlan(rawRows) {
     bfaPhonesInvalid: 0,
     nonCiPhonesPreserved: 0,
     emailsInvalidOrMissing: 0,
+    birthDatesImported: 0,
   };
 
   rawRows.forEach((row, index) => {
@@ -110,6 +111,7 @@ function buildImportPlan(rawRows) {
     }
     if (item.phoneInfo.status === "preserved") stats.nonCiPhonesPreserved += 1;
     if (!item.normalized.email && row?.Email) stats.emailsInvalidOrMissing += 1;
+    if (item.normalized.birth_date) stats.birthDatesImported += 1;
 
     validRows.push({
       line,
@@ -128,6 +130,71 @@ function buildImportPlan(rawRows) {
 async function resetTable() {
   await prisma.fBO.deleteMany({});
   await prisma.$executeRawUnsafe(`ALTER SEQUENCE "FBO_id_seq" RESTART WITH 1;`);
+}
+
+async function bulkUpsertRows(rows) {
+  if (!rows.length) return;
+
+  const values = Prisma.join(
+    rows.map(({ line, ...row }) =>
+      Prisma.sql`(
+        ${row.fbo_number},
+        ${row.full_name},
+        ${row.grade},
+        ${row.op_country},
+        ${row.country},
+        ${row.phone},
+        ${row.email},
+        ${row.birth_date},
+        CURRENT_TIMESTAMP
+      )`,
+    ),
+  );
+
+  await prisma.$executeRaw`
+    INSERT INTO "FBO" (
+      "fbo_number",
+      "full_name",
+      "grade",
+      "op_country",
+      "country",
+      "phone",
+      "email",
+      "birth_date",
+      "updated_at"
+    )
+    VALUES ${values}
+    ON CONFLICT ("fbo_number") DO UPDATE SET
+      "full_name" = EXCLUDED."full_name",
+      "grade" = EXCLUDED."grade",
+      "op_country" = EXCLUDED."op_country",
+      "country" = EXCLUDED."country",
+      "phone" = EXCLUDED."phone",
+      "email" = EXCLUDED."email",
+      "birth_date" = EXCLUDED."birth_date",
+      "updated_at" = CURRENT_TIMESTAMP
+  `;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function bulkUpsertRowsWithRetry(rows, batchLabel, maxAttempts = 3) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await bulkUpsertRows(rows);
+      return;
+    } catch (error) {
+      if (attempt >= maxAttempts) throw error;
+
+      console.warn(
+        `   ⚠️ Batch ${batchLabel} échoué (${error.code || error.name || "erreur"}), tentative ${attempt + 1}/${maxAttempts}`,
+      );
+      await prisma.$disconnect().catch(() => {});
+      await sleep(2000 * attempt);
+    }
+  }
 }
 
 async function importRows(rows, { reset = false, dryRun = false } = {}) {
@@ -152,21 +219,7 @@ async function importRows(rows, { reset = false, dryRun = false } = {}) {
       });
       stats.createdRows += batch.length;
     } else {
-      const operations = batch.map(({ line, ...row }) =>
-        prisma.fBO.upsert({
-          where: { fbo_number: row.fbo_number },
-          update: {
-            full_name: row.full_name,
-            grade: row.grade,
-            op_country: row.op_country,
-            country: row.country,
-            phone: row.phone,
-            email: row.email,
-          },
-          create: row,
-        }),
-      );
-      await prisma.$transaction(operations);
+      await bulkUpsertRowsWithRetry(batch, `${i + 1}/${chunks.length}`);
       stats.updatedRows += batch.length;
     }
 
@@ -223,6 +276,7 @@ async function main() {
   console.log(`   - Téléphones CI invalides : ${plan.stats.ciPhonesInvalid}`);
   console.log(`   - Téléphones BFA normalisés : ${plan.stats.bfaPhonesNormalized}`);
   console.log(`   - Téléphones BFA invalides : ${plan.stats.bfaPhonesInvalid}`);
+  console.log(`   - Dates de naissance importées : ${plan.stats.birthDatesImported}`);
   console.log(`   - Rapport : ${reportPath}`);
   console.log("\n✅ Import terminé.");
 }
