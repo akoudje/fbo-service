@@ -186,7 +186,7 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function bulkUpsertRowsWithRetry(rows, batchLabel, maxAttempts = 3) {
+async function bulkUpsertRowsWithRetry(rows, batchLabel, maxAttempts = 10) {
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
       await bulkUpsertRows(rows);
@@ -198,7 +198,7 @@ async function bulkUpsertRowsWithRetry(rows, batchLabel, maxAttempts = 3) {
         `   ⚠️ Batch ${batchLabel} échoué (${error.code || error.name || "erreur"}), tentative ${attempt + 1}/${maxAttempts}`,
       );
       await prisma.$disconnect().catch(() => {});
-      await sleep(2000 * attempt);
+      await sleep(Math.min(5000 * attempt, 30000));
     }
   }
 }
