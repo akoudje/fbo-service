@@ -51,6 +51,7 @@ function buildImportPlan(rawRows) {
   const validRows = [];
   const rejected = [];
   const duplicates = [];
+  const invalidPhones = [];
   const stats = {
     totalRows: rawRows.length,
     importedRows: 0,
@@ -101,13 +102,17 @@ function buildImportPlan(rawRows) {
     if (item.phoneInfo.status === "invalid") {
       if (item.phoneInfo.country === "BFA") stats.bfaPhonesInvalid += 1;
       else stats.ciPhonesInvalid += 1;
-      rejected.push({
+      // On n'écarte plus le FBO pour un téléphone illisible : mieux vaut le
+      // créer/mettre à jour sans téléphone (à corriger manuellement plus
+      // tard) que de perdre un nouveau membre ou de manquer sa mise à jour
+      // de grade. Le téléphone existant en base n'est jamais écrasé par ce
+      // null (voir COALESCE dans bulkUpsertRows).
+      invalidPhones.push({
         line,
         fbo_number: fboNumber,
         reason: item.phoneInfo.reason,
       });
-      stats.rejectedRows += 1;
-      return;
+      item.normalized.phone = null;
     }
     if (item.phoneInfo.status === "preserved") stats.nonCiPhonesPreserved += 1;
     if (!item.normalized.email && row?.Email) stats.emailsInvalidOrMissing += 1;
@@ -123,6 +128,7 @@ function buildImportPlan(rawRows) {
     validRows,
     duplicates,
     rejected,
+    invalidPhones,
     stats,
   };
 }
@@ -169,7 +175,7 @@ async function bulkUpsertRows(rows) {
       "grade" = EXCLUDED."grade",
       "op_country" = EXCLUDED."op_country",
       "country" = EXCLUDED."country",
-      "phone" = EXCLUDED."phone",
+      "phone" = COALESCE(EXCLUDED."phone", "FBO"."phone"),
       "email" = EXCLUDED."email",
       "birth_date" = EXCLUDED."birth_date",
       "updated_at" = CURRENT_TIMESTAMP
@@ -261,6 +267,7 @@ async function main() {
     },
     rejected: plan.rejected,
     duplicates: plan.duplicates,
+    invalidPhones: plan.invalidPhones,
   };
 
   const reportsDir = path.join(process.cwd(), "prisma", "reports");
@@ -270,8 +277,9 @@ async function main() {
 
   console.log("\n📊 Résumé import FBO");
   console.log(`   - Lignes valides importables : ${plan.validRows.length}`);
-  console.log(`   - Lignes rejetées : ${plan.rejected.length}`);
+  console.log(`   - Lignes rejetées (champs obligatoires manquants) : ${plan.rejected.length}`);
   console.log(`   - Doublons FBO ID : ${plan.duplicates.length}`);
+  console.log(`   - Téléphones illisibles importés sans téléphone : ${plan.invalidPhones.length}`);
   console.log(`   - Téléphones CI normalisés : ${plan.stats.ciPhonesNormalized}`);
   console.log(`   - Téléphones CI invalides : ${plan.stats.ciPhonesInvalid}`);
   console.log(`   - Téléphones BFA normalisés : ${plan.stats.bfaPhonesNormalized}`);
