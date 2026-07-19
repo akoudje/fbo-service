@@ -176,8 +176,8 @@ async function bulkUpsertRows(rows) {
       "op_country" = EXCLUDED."op_country",
       "country" = EXCLUDED."country",
       "phone" = COALESCE(EXCLUDED."phone", "FBO"."phone"),
-      "email" = EXCLUDED."email",
-      "birth_date" = EXCLUDED."birth_date",
+      "email" = COALESCE(EXCLUDED."email", "FBO"."email"),
+      "birth_date" = COALESCE(EXCLUDED."birth_date", "FBO"."birth_date"),
       "updated_at" = CURRENT_TIMESTAMP
   `;
 }
